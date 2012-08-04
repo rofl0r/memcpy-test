@@ -54,7 +54,7 @@ static inline unsigned long long rdtsc(void)
      return x;
 }
 #elif defined(__x86_64__)
-static inline unsigned long long rdtsc(void) {
+/*static inline unsigned long long rdtsc(void) {
     unsigned long long hi, lo;
     __asm__ __volatile__(
             "xorl %%eax, %%eax;\n\t"
@@ -75,7 +75,7 @@ static inline unsigned long long rdtsc(void) {
     return (unsigned long long)hi << 32 | lo;
 }
 #elif 0
-
+*/
 static inline unsigned long long rdtsc(void)
 {
   unsigned hi, lo;
