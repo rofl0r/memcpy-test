@@ -1,0 +1,15 @@
+pick one of the memcpy implementations or add a file containing a memcpy function called 
+
+'mymemcpy'
+
+run ./build.sh name_of_file_providing_mymemcpy_func.c
+./test | tee descriptive_log_filename_here.txt
+
+do the same with a second impl
+
+when you have 2 files with different results you can compare them using
+
+./compare.pl file1 file2
+
+
+
