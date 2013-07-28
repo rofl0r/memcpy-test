@@ -2,14 +2,10 @@ pick one of the memcpy implementations or add a file containing a memcpy functio
 
 'mymemcpy'
 
-run ./build.sh name_of_file_providing_mymemcpy_func.c
-./test | tee descriptive_log_filename_here.txt
+then run
+CC=gcc OPTS="-O3 -funroll-all-loops" ./compare.pl implementation1.c implementation2.s
 
-do the same with a second impl
-
-when you have 2 files with different results you can compare them using
-
-./compare.pl file1 file2
+(both .s and .c suffixes are supported)
 
 
 

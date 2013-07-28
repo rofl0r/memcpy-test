@@ -153,8 +153,6 @@ int main(int argc, char** argv) {
 #define K(X) (1024 * X)
 #define ARRAY_SIZE(X) (sizeof(X) / sizeof((X)[0]))
 
-	printf("testing speed of %s\n", FILENAME);
-	
 	size_t testsizes[] = {
 		3 ,4 ,5,
 		8, 
