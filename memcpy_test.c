@@ -115,38 +115,23 @@ extern int dummy_access(void* mem, size_t size);
 
 
 static long long counter = 0;
-static inline unsigned long test(size_t size) {
-	char *src, *dst;
+static inline void test(size_t size, char* src, char* dst) {
 	long result;
 	long counter_mod_4;
-	
+
 	if(size > 4)
 		counter_mod_4 = counter % 4;
-	else 
+	else
 		counter_mod_4 = 0;
-	
-	struct timeval start;
-	
-	
-	src = malloc(size);
-	dst = malloc(size);
-	
-	fillmem(src, size); // dummy call so that gcc can not guess the mem contents.
 
-	
-	//gettimeofday(&start, NULL);
-	unsigned long long ticka = rdtsc(), tickb;
+	struct timeval start;
+
+	fillmem(src, size); // dummy call so that gcc can not guess the mem contents.
 	mymemcpy(dst + counter_mod_4, src + counter_mod_4, size - counter_mod_4);
-	tickb = rdtsc();
-	result = tickb - ticka;
-	//result = microsecpassed(&start);
-	
 	if(dummy_access(dst, size) == 1) abort(); // dummy call so that gcc can not assume mem content is never accessed.
-	
+
 	counter ++;
-	free(src);
-	free(dst);
-	return result;
+	return;
 }
 
 int main(int argc, char** argv) {
@@ -155,43 +140,71 @@ int main(int argc, char** argv) {
 
 	size_t testsizes[] = {
 		3 ,4 ,5,
-		8, 
+		8,
 		15, 16,
-		23, 24, 25, 
+		23, 24, 25,
 		31, 32, 33,
 		63, 64, 65,
 		95, 96, 97,
 		127, 128, 129,
 		159, 160, 161,
 		191, 192, 193,
+		224,
 		255, 256, 257,
+		288, 320, 348,
 		383, 384, 385,
+		416, 448, 476,
 		511, 512, 513,
+		548, 640, 732,
 		767, 768, 769,
 		1023, 1024, 1025,
 		1535, 1536, 1537,
 		2048, 4096, 8192,
 		16384, 32768, 65536,
-		K(128), K(256), K(512),
-		K(1024), K(2048), K(4096),
+		K(128), K(160), K(192), K(208), K(216), K(220), K(224), K(240),
+		K(256), K(384), K(512),
+		K(1024), K(1280), K(1536), K(1792), K(2048),
+		K(2560), K(3072), K(3584), K(4096),
+		K(4352), K(4608), K(4864),
+		K(5120), K(5376), K(5632), K(5888),
+		K(6144), K(6400), K(6656), K(6912), K(7168),
 		K(8192), K(16384), K(32768), K(65536),
 	};
-		
+
 	unsigned long x, y, ymax;
-	unsigned long long res, smallest;
+	unsigned long long smallest;
+	double res;
+	FILE *f = fopen("/dev/urandom", "r");
 	for (x = 0 ; x < ARRAY_SIZE(testsizes); x++) {
+		char *src, *dst;
+		unsigned long long ticka = rdtsc(), tickb;
+
 		//smallest = 0xffffffff;
-		res = 0;
-		ymax = testsizes[x] > K(100) ? 100 : 10000;
-		for(y = 0; y < ymax; y++) {
-			res += test(testsizes[x]);
-			//if(res < smallest) smallest = res;
-			
+		ymax = testsizes[x] > K(100) ? 100 : 1000;
+
+		src = malloc(testsizes[x]);
+		dst = malloc(testsizes[x]);
+		fread(src, 1, testsizes[x], f);
+		/* check that the function actually works */
+		mymemcpy(dst, src, testsizes[x]);
+		if(memcmp(src, dst, testsizes[x])) {
+			fprintf(stderr, "warning: %s didn't pass self-test with size %zu!\n", FILENAME, testsizes[x]);
 		}
+
+		for(y = 0; y < ymax; y++) {
+			test(testsizes[x], src, dst);
+			//if(res < smallest) smallest = res;
+		}
+		tickb = rdtsc();
+		res = (tickb - ticka) / (ymax*1.0f);
+
 		res /= ymax;
-		fprintf(stdout, "%zu\t%lu ticks\n", testsizes[x], res);
+		fprintf(stdout, "%-8zu\t%.4f ticks\n", testsizes[x], res);
 		fflush(stdout);
+		free(src);
+		free(dst);
 	}
+	fclose(f);
 	return 0;
 }
 
