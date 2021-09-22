@@ -2,7 +2,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdlib.h>
-
+#include <assert.h>
 #include <sys/time.h>
 
 unsigned long long microsecpassed(struct timeval* t) {
@@ -18,7 +18,7 @@ inline unsigned long long rdtsc() {
   unsigned int lo, hi;
   __asm__ volatile (
      "cpuid \n"
-     "rdtsc" 
+     "rdtsc"
    : "=a"(lo), "=d"(hi) /* outputs */
    : "a"(0)             /* inputs */
    : "%ebx", "%ecx");     /* clobbers*/
@@ -42,7 +42,7 @@ static inline unsigned long long rdtsc(void) {
             "pop %%ebx;"
             ::
             :"%eax", "%ebx", "%ecx", "%edx");
-   
+
     return (unsigned long long)hi << 32 | lo;
 }
 
@@ -71,7 +71,7 @@ static inline unsigned long long rdtsc(void)
             "pop %%rbx;"
             ::
             :"%rax", "%rbx", "%rcx", "%rdx");
-   
+
     return (unsigned long long)hi << 32 | lo;
 }
 #elif 0
@@ -82,6 +82,11 @@ static inline unsigned long long rdtsc(void)
   __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
   return ( (unsigned long long)lo)|( ((unsigned long long)hi)<<32 );
 }
+
+static inline void serialize () {
+    __asm__ __volatile__ ("cpuid" : : "a"(0) : "ebx", "ecx", "edx" );
+}
+
 
 #elif defined(__powerpc__)
 
@@ -113,38 +118,39 @@ extern void *mymemcpy(void *dest, const void *src, size_t n);
 extern void fillmem(void* mem, size_t size);
 extern int dummy_access(void* mem, size_t size);
 
+#include <sched.h>
+static void lock_affinity(void) {
+	cpu_set_t cs;
+	assert(0 == sched_getaffinity(0, sizeof(cs), &cs));
+	CPU_ZERO_S(sizeof(cs), &cs);
+	CPU_SET_S(0, sizeof(cs), &cs);
+	assert(0 == sched_setaffinity(0, sizeof(cs), &cs));
+}
 
-static long long counter = 0;
-static inline void test(size_t size, char* src, char* dst) {
-	long result;
-	long counter_mod_4;
-
-	if(size > 4)
-		counter_mod_4 = counter % 4;
-	else
-		counter_mod_4 = 0;
-
-	struct timeval start;
-
+static inline unsigned long test(size_t size, char* src, char* dst) {
+	unsigned long ticka, tickb;
 	fillmem(src, size); // dummy call so that gcc can not guess the mem contents.
-	mymemcpy(dst + counter_mod_4, src + counter_mod_4, size - counter_mod_4);
+	ticka = rdtsc();
+	void* p = mymemcpy(dst, src, size);
+	tickb = rdtsc();
+	assert(p == dst);
 	if(dummy_access(dst, size) == 1) abort(); // dummy call so that gcc can not assume mem content is never accessed.
-
-	counter ++;
-	return;
+	return tickb - ticka;
 }
 
 int main(int argc, char** argv) {
-#define K(X) (1024 * X)
+#define K(X) (1024UL * X)
 #define ARRAY_SIZE(X) (sizeof(X) / sizeof((X)[0]))
+#define MIN(A,B) ((A) > (B) ? (B) : (A))
 
-	size_t testsizes[] = {
-		3 ,4 ,5,
-		8,
+	const size_t testsizes[] = {
+		0, 1, 2, 3 ,4 ,5, 6, 7,
+		8, 9, 10, 11, 12, 13, 14,
 		15, 16,
 		23, 24, 25,
 		31, 32, 33,
 		63, 64, 65,
+		79, 80, 81,
 		95, 96, 97,
 		127, 128, 129,
 		159, 160, 161,
@@ -157,7 +163,7 @@ int main(int argc, char** argv) {
 		511, 512, 513,
 		548, 640, 732,
 		767, 768, 769,
-		1023, 1024, 1025,
+		1023, 1024, 1025, 1152, 1280, 1408,
 		1535, 1536, 1537,
 		2048, 4096, 8192,
 		16384, 32768, 65536,
@@ -171,35 +177,58 @@ int main(int argc, char** argv) {
 		K(8192), K(16384), K(32768), K(65536),
 	};
 
+	lock_affinity();
+
 	unsigned long x, y, ymax;
 	unsigned long long smallest;
 	double res;
+
+	// warm up
+	for(x = 1 << 28; x > 0; --x);
+
 	FILE *f = fopen("/dev/urandom", "r");
 	for (x = 0 ; x < ARRAY_SIZE(testsizes); x++) {
 		char *src, *dst;
-		unsigned long long ticka = rdtsc(), tickb;
 
 		//smallest = 0xffffffff;
-		ymax = testsizes[x] > K(100) ? 100 : 1000;
+		y = testsizes[x] ? testsizes[x] : 1;
+		ymax = (K(65536)*(100ULL - (MIN(99ULL, ARRAY_SIZE(testsizes) - x -1ULL))))/y;
+		if(testsizes[x] >= 64) ymax*=2;
+		if(testsizes[x] >= 1024) ymax*=2;
 
-		src = malloc(testsizes[x]);
-		dst = malloc(testsizes[x]);
-		fread(src, 1, testsizes[x], f);
-		/* check that the function actually works */
-		mymemcpy(dst, src, testsizes[x]);
-		if(memcmp(src, dst, testsizes[x])) {
+		src = malloc(testsizes[x] + 64);
+		dst = malloc(testsizes[x] + 64);
+		/* check that the function works correctly -
+		   the +1 stuff is to get unaligned start offset,
+		   the 0xaa/bb stuff to check whether it writes off bounds. */
+		dst[0] = src[0] = 0xee;
+		memset(src+1+testsizes[x], 0xbb, 32);
+		memset(dst+1+testsizes[x], 0xaa, 32);
+		fread(src+1, 1, testsizes[x], f);
+		if(testsizes[x] >= 4) {
+			/* make sure we copy into the right direction */
+			src[1] = 'a'; src[2] = 'b'; src[3] = 'c'; src[4] = 'd';
+			dst[1] = '0'; dst[2] = '1'; dst[3] = '2'; dst[4] = '3';
+		}
+		mymemcpy(dst+1, src+1, testsizes[x]);
+		memset(src+1+testsizes[x], 0xaa, 32);
+		if(memcmp(src+1, dst+1, testsizes[x]+32) || (testsizes[x] >= 4 && memcmp(dst+1, "abcd", 4))) {
 			fprintf(stderr, "warning: %s didn't pass self-test with size %zu!\n", FILENAME, testsizes[x]);
 		}
 
-		for(y = 0; y < ymax; y++) {
-			test(testsizes[x], src, dst);
-			//if(res < smallest) smallest = res;
-		}
-		tickb = rdtsc();
-		res = (tickb - ticka) / (ymax*1.0f);
+		unsigned long long curr, total, best = -1ULL;
 
-		res /= ymax;
-		fprintf(stdout, "%-8zu\t%.4f ticks\n", testsizes[x], res);
+		serialize();
+		for(y = 0; y < ymax; y++) {
+			//__builtin_ia32_clflush(src);
+			//__builtin_ia32_clflush(dst);
+			curr = test(testsizes[x], src, dst);
+			if(curr < best) best = curr;
+			total += curr;
+		}
+		serialize();
+
+		fprintf(stdout, "%-8zu\t%llu\n", testsizes[x], best);
 		fflush(stdout);
 		free(src);
 		free(dst);
