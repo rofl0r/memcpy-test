@@ -1,11 +1,16 @@
-pick one of the memcpy implementations or add a file containing a memcpy function called 
+pick one of the memcpy implementations or add a file containing a memcpy function called
 
-'mymemcpy'
+`mymemcpy`.
+
+it needs to be called this way in order to keep optimizations/system libc from
+interfering.
 
 then run
-CC=gcc OPTS="-O3 -funroll-all-loops" ./compare.pl implementation1.c implementation2.s
+`CC=gcc OPTS="-O3 -funroll-all-loops" ./compare.py impl1.c [impl2.s ... implX.c]`
 
 (both .s and .c suffixes are supported)
 
+if you use a modern CPU using speedstep, you can get much better results by
+putting the CPU into "userspace" governor and then lock the CPU freq to 1 GHz.
 
 
