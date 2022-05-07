@@ -12,4 +12,4 @@ fi
 $CC -c dummyfuncs.c -o dummyfuncs.o
 $CC -D_GNU_SOURCE -D_BSD_SOURCE -O0 -g3 -DFILENAME=\"$1\" -c memcpy_test.c -o memcpy_test.o
 $CC $OPTS -c "$1" -o mymemcpy.o
-$CC dummyfuncs.o memcpy_test.o mymemcpy.o -o test
+$CC $OPTS dummyfuncs.o memcpy_test.o mymemcpy.o -o test
